@@ -1,0 +1,8 @@
+{
+  "name": "ParaPusula - Harcama, Fatura ve Tasarruf Takibi",
+  "description": "Harcama ve gelir takibi, akıllı fatura hatırlatıcıları, tasarruf hedefleri, modern grafikler ve güvenli bulut senkronizasyonu sunan mobil uyumlu kişisel finans yöneticisi.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
