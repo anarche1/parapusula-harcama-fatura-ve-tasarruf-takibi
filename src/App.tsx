@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { AppDataState, NavTab, Transaction, BillReminder, SavingsGoal, UserSettings, CurrencyCode } from './types';
+import { AppDataState, NavTab, Transaction, BillReminder, SavingsGoal, UserSettings, CurrencyCode, SalarySchedule } from './types';
 import { loadInitialData, saveAppData, syncWithCloud, fetchFromCloud, resetAppData } from './utils/storage';
 import { Header } from './components/Header';
 import { Navigation } from './components/Navigation';
@@ -13,6 +13,7 @@ import { AddTransactionModal } from './components/AddTransactionModal';
 import { AddBillModal } from './components/AddBillModal';
 import { AddGoalModal } from './components/AddGoalModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
+import { ManageSalariesModal } from './components/ManageSalariesModal';
 
 export const App: React.FC = () => {
   const [data, setData] = useState<AppDataState>(() => loadInitialData());
@@ -25,6 +26,7 @@ export const App: React.FC = () => {
   const [isAddBillOpen, setIsAddBillOpen] = useState(false);
   const [isAddGoalOpen, setIsAddGoalOpen] = useState(false);
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [isManageSalariesOpen, setIsManageSalariesOpen] = useState(false);
 
   // Save to local storage whenever data changes & apply dark class
   useEffect(() => {
@@ -257,6 +259,32 @@ export const App: React.FC = () => {
     }));
   };
 
+  // Save salaries configuration
+  const handleSaveSalaries = (newSalaries: SalarySchedule[]) => {
+    handleUpdateSettings({ salaries: newSalaries });
+  };
+
+  // Quick action: Log salary income transaction
+  const handleLogSalaryIncome = (salary: SalarySchedule) => {
+    const today = new Date().toISOString().split('T')[0];
+    const newTx: Transaction = {
+      id: 'tx-salary-' + Date.now(),
+      type: 'income',
+      amount: salary.amount,
+      category: 'Maaş',
+      description: `${salary.title} (${salary.employerOrNote || 'Aylık Maaş Ödemesi'})`,
+      date: today,
+      paymentMethod: 'havale_eft',
+      createdAt: new Date().toISOString(),
+      tags: ['maaş', 'düzenli gelir']
+    };
+
+    setData((prev) => ({
+      ...prev,
+      transactions: [newTx, ...prev.transactions]
+    }));
+  };
+
   const handleToggleTheme = () => {
     const nextTheme = data.settings.theme === 'light' ? 'dark' : 'light';
     handleUpdateSettings({ theme: nextTheme });
@@ -312,11 +340,14 @@ export const App: React.FC = () => {
               goals={data.goals}
               categories={data.categories}
               currency={data.settings.currency}
+              salaries={data.settings.salaries}
               onOpenAddModal={() => setIsAddTxOpen(true)}
               onOpenAddBillModal={() => setIsAddBillOpen(true)}
               onOpenAddGoalModal={() => setIsAddGoalOpen(true)}
               onNavigateTab={setActiveTab}
               onMarkBillPaid={handleToggleBillPaid}
+              onOpenManageSalaries={() => setIsManageSalariesOpen(true)}
+              onLogSalaryIncome={handleLogSalaryIncome}
             />
           )}
 
@@ -363,6 +394,7 @@ export const App: React.FC = () => {
               onResetData={handleResetData}
               onImportData={handleImportData}
               onOpenSyncModal={() => setIsSyncModalOpen(true)}
+              onOpenManageSalaries={() => setIsManageSalariesOpen(true)}
             />
           )}
         </main>
@@ -373,7 +405,7 @@ export const App: React.FC = () => {
         <div>© 2026 ParaPusula Android & Web Financial Management</div>
         <div className="flex items-center gap-4">
           <span>Veri Güvenliği: AES-256 Şifreli</span>
-          <span>Bulut Senkronizasyonu: Aktif</span>
+          <span>Çift Maaş Takibi: Aktif</span>
         </div>
       </footer>
 
@@ -405,6 +437,14 @@ export const App: React.FC = () => {
         onPushToCloud={handlePushCloud}
         onPullFromCloud={handlePullCloud}
         lastSyncedAt={data.lastSyncedAt}
+      />
+
+      <ManageSalariesModal
+        isOpen={isManageSalariesOpen}
+        onClose={() => setIsManageSalariesOpen(false)}
+        salaries={data.settings.salaries || []}
+        currency={data.settings.currency}
+        onSaveSalaries={handleSaveSalaries}
       />
     </div>
   );

@@ -96,6 +96,46 @@ export function getDaysRemaining(dueDateString: string): {
   }
 }
 
+export function getSalaryCountdown(dayOfMonth: number): {
+  daysLeft: number;
+  nextDateFormatted: string;
+  isToday: boolean;
+  nextDateISO: string;
+} {
+  const today = new Date();
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth();
+  const currentDay = today.getDate();
+
+  // Handle clamping if day is 31 and month has 30 days
+  const safeDay = Math.min(dayOfMonth, 28); // or calculate last day of month
+
+  let targetDate = new Date(currentYear, currentMonth, dayOfMonth);
+
+  if (currentDay > dayOfMonth) {
+    // Already passed this month -> next month
+    targetDate = new Date(currentYear, currentMonth + 1, dayOfMonth);
+  }
+
+  const diffTime = targetDate.getTime() - new Date(currentYear, currentMonth, currentDay).getTime();
+  const daysLeft = Math.max(0, Math.round(diffTime / (1000 * 60 * 60 * 24)));
+  const isToday = daysLeft === 0;
+
+  const nextDateFormatted = new Intl.DateTimeFormat('tr-TR', {
+    day: 'numeric',
+    month: 'long'
+  }).format(targetDate);
+
+  const nextDateISO = targetDate.toISOString().split('T')[0];
+
+  return {
+    daysLeft,
+    nextDateFormatted,
+    isToday,
+    nextDateISO
+  };
+}
+
 export function calculateSummary(transactions: Transaction[], bills: BillReminder[], goals: SavingsGoal[]) {
   const totalIncome = transactions
     .filter((t) => t.type === 'income')

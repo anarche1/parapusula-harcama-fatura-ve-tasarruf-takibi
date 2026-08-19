@@ -66,6 +66,15 @@ export type CurrencyCode = 'TRY' | 'USD' | 'EUR' | 'GBP';
 
 export type NavTab = 'dashboard' | 'transactions' | 'bills' | 'savings' | 'aicoach' | 'settings';
 
+export interface SalarySchedule {
+  id: string;
+  title: string; // e.g. "1. Maaş (Ana İş)", "2. Maaş (Ek İş / Danışmanlık)"
+  amount: number;
+  dayOfMonth: number; // 1 - 31
+  employerOrNote?: string;
+  autoLogIncome?: boolean;
+}
+
 export interface UserSettings {
   currency: CurrencyCode;
   monthlyIncomeGoal: number;
@@ -76,6 +85,7 @@ export interface UserSettings {
   theme?: 'light' | 'dark';
   pinCode?: string;
   isPinLocked?: boolean;
+  salaries?: SalarySchedule[];
 }
 
 export interface AppDataState {

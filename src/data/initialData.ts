@@ -251,7 +251,25 @@ export const INITIAL_SETTINGS: UserSettings = {
   autoSync: true,
   enableNotifications: true,
   theme: 'dark',
-  isPinLocked: false
+  isPinLocked: false,
+  salaries: [
+    {
+      id: 'sal_1',
+      title: '1. Maaş (Ana İş)',
+      amount: 38000,
+      dayOfMonth: 1,
+      employerOrNote: 'Ana Şirket Bordro',
+      autoLogIncome: true
+    },
+    {
+      id: 'sal_2',
+      title: '2. Maaş (Ek İş / Danışmanlık)',
+      amount: 17000,
+      dayOfMonth: 15,
+      employerOrNote: 'Bilişim & Danışmanlık',
+      autoLogIncome: true
+    }
+  ]
 };
 
 export const INITIAL_APP_STATE: AppDataState = {

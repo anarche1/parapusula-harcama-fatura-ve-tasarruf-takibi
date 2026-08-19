@@ -16,7 +16,15 @@ import {
   Tag,
   Flame,
   Layers,
-  ArrowRight
+  ArrowRight,
+  AlertTriangle,
+  Clock,
+  CreditCard,
+  Zap,
+  Briefcase,
+  Sliders,
+  DollarSign,
+  Gift
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -30,8 +38,8 @@ import {
   Cell,
   Sector
 } from 'recharts';
-import { Transaction, BillReminder, SavingsGoal, Category, CurrencyCode } from '../types';
-import { formatCurrency, formatDate, getDaysRemaining, calculateSummary } from '../utils/formatters';
+import { Transaction, BillReminder, SavingsGoal, Category, CurrencyCode, SalarySchedule } from '../types';
+import { formatCurrency, formatDate, getDaysRemaining, calculateSummary, getSalaryCountdown } from '../utils/formatters';
 
 interface DashboardProps {
   transactions: Transaction[];
@@ -39,11 +47,14 @@ interface DashboardProps {
   goals: SavingsGoal[];
   categories: Category[];
   currency: CurrencyCode;
+  salaries?: SalarySchedule[];
   onOpenAddModal: () => void;
   onOpenAddBillModal: () => void;
   onOpenAddGoalModal: () => void;
   onNavigateTab: (tab: any) => void;
   onMarkBillPaid: (billId: string) => void;
+  onOpenManageSalaries: () => void;
+  onLogSalaryIncome: (salary: SalarySchedule) => void;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -67,14 +78,37 @@ export const Dashboard: React.FC<DashboardProps> = ({
   goals,
   categories,
   currency,
+  salaries = [],
   onOpenAddModal,
   onOpenAddBillModal,
   onOpenAddGoalModal,
   onNavigateTab,
-  onMarkBillPaid
+  onMarkBillPaid,
+  onOpenManageSalaries,
+  onLogSalaryIncome
 }) => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const summary = calculateSummary(transactions, bills, goals);
+
+  // Default 2 salaries if none provided
+  const activeSalaries: SalarySchedule[] = salaries.length > 0 ? salaries : [
+    {
+      id: 'sal_1',
+      title: '1. Maaş (Ana İş)',
+      amount: 38000,
+      dayOfMonth: 1,
+      employerOrNote: 'Ana Şirket Bordro',
+      autoLogIncome: true
+    },
+    {
+      id: 'sal_2',
+      title: '2. Maaş (Ek İş / Danışmanlık)',
+      amount: 17000,
+      dayOfMonth: 15,
+      employerOrNote: 'Bilişim & Danışmanlık',
+      autoLogIncome: true
+    }
+  ];
 
   // Group expenses by category for pie chart
   const expenseTransactions = transactions.filter((t) => t.type === 'expense');
@@ -134,11 +168,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const wantsPct = Math.round((totalWants / incomeBase) * 100);
   const savingsPct = Math.max(0, 100 - needsPct - wantsPct);
 
-  // Urgent upcoming bills (unpaid)
+  // Urgent upcoming bills (unpaid), sorted by urgency
   const upcomingBills = bills
     .filter((b) => !b.isPaid)
     .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-    .slice(0, 3);
+    .slice(0, 4);
+
+  // Check how many are urgent (overdue or <= 3 days)
+  const urgentBillsCount = bills.filter((b) => {
+    if (b.isPaid) return false;
+    const r = getDaysRemaining(b.dueDate);
+    return r.isOverdue || r.isDueToday || r.days <= 3;
+  }).length;
+
+  // Total expected monthly salary
+  const totalExpectedMonthlySalary = activeSalaries.reduce((sum, s) => sum + s.amount, 0);
 
   // Custom active shape for interactive Pie Hover
   const renderActiveShape = (props: any) => {
@@ -160,9 +204,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-6 pb-24 md:pb-8">
-      {/* 4 Metric Cards matching Sophisticated Dark Spec */}
+      {/* 4 Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Toplam Bakiye */}
+        {/* Net Kalan Bakiye */}
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between shadow-xs">
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Net Kalan Bakiye</p>
@@ -176,7 +220,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </p>
         </div>
 
-        {/* Toplam Gelir */}
+        {/* Aylık Toplam Gelir */}
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between shadow-xs">
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Aylık Toplam Gelir</p>
@@ -189,7 +233,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </p>
         </div>
 
-        {/* Aylık Harcama */}
+        {/* Aylık Toplam Harcama */}
         <div className="bg-slate-900 border border-slate-800 p-5 rounded-2xl flex flex-col justify-between shadow-xs">
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wider mb-1">Aylık Toplam Harcama</p>
@@ -203,7 +247,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </p>
         </div>
 
-        {/* Toplam Tasarruf (Indigo Highlight) */}
+        {/* Toplam Tasarruf */}
         <div className="bg-indigo-600/10 border border-indigo-500/30 p-5 rounded-2xl flex flex-col justify-between shadow-xs">
           <div>
             <p className="text-xs text-indigo-400 uppercase tracking-wider mb-1">Toplam Tasarruf</p>
@@ -218,9 +262,123 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
+      {/* DUAL SALARY CALENDAR & COUNTDOWN WIDGET (ÇİFT MAAŞ TAKVİMİ) */}
+      <div className="bg-gradient-to-r from-slate-900 via-slate-900 to-indigo-950/40 border border-indigo-500/30 rounded-2xl p-5 sm:p-6 shadow-md space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center shrink-0">
+              <Briefcase className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm sm:text-base font-bold text-white">Çift Maaş Takvimi & Geri Sayım</h3>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  {activeSalaries.length} Maaş Kayıtlı
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                1. ve 2. maaş tarihleriniz, kalan gün sayaçları ve hızlı gelir ekleme
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="text-right hidden sm:block pr-2">
+              <span className="text-[10px] text-slate-400 block">Toplam Aylık Maaş</span>
+              <span className="text-sm font-extrabold text-emerald-400">
+                {formatCurrency(totalExpectedMonthlySalary, currency)}
+              </span>
+            </div>
+            <button
+              onClick={onOpenManageSalaries}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Maaşları Düzenle</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Salary Cards Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {activeSalaries.map((sal, idx) => {
+            const countdown = getSalaryCountdown(sal.dayOfMonth);
+            const isSoon = countdown.daysLeft <= 3;
+
+            return (
+              <div
+                key={sal.id}
+                className={`p-4 rounded-xl border transition flex flex-col justify-between gap-3 ${
+                  countdown.isToday
+                    ? 'bg-emerald-950/30 border-emerald-500/50 shadow-md shadow-emerald-500/10'
+                    : isSoon
+                    ? 'bg-indigo-950/30 border-indigo-500/40'
+                    : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                {/* Header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-indigo-600/30 text-indigo-300 text-[10px] font-extrabold flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      <h4 className="text-xs sm:text-sm font-bold text-white truncate">
+                        {sal.title}
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      {sal.employerOrNote || 'Düzenli Gelir'} • Her ayın {sal.dayOfMonth}. günü
+                    </p>
+                  </div>
+
+                  {/* Countdown Badge */}
+                  {countdown.isToday ? (
+                    <span className="px-2.5 py-1 rounded-md text-[10px] font-extrabold bg-emerald-500/25 text-emerald-300 border border-emerald-500/40 animate-pulse shrink-0 flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-emerald-300" />
+                      BUGÜN MAAŞ GÜNÜ!
+                    </span>
+                  ) : (
+                    <span
+                      className={`px-2.5 py-1 rounded-md text-[10px] font-bold shrink-0 border ${
+                        isSoon
+                          ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
+                          : 'bg-slate-900 text-slate-300 border-slate-800'
+                      }`}
+                    >
+                      {countdown.daysLeft === 1 ? 'Yarın!' : `${countdown.daysLeft} Gün Kaldı`}
+                    </span>
+                  )}
+                </div>
+
+                {/* Amount & Quick Action */}
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-3">
+                  <div>
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider block">Net Tutar</span>
+                    <span className="text-base font-extrabold text-emerald-400">
+                      {formatCurrency(sal.amount, currency)}
+                    </span>
+                  </div>
+
+                  {/* Fast 'Maaş Yattı' Button */}
+                  <button
+                    onClick={() => onLogSalaryIncome(sal)}
+                    className="px-3 py-1.5 bg-emerald-600/90 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition cursor-pointer"
+                    title="Bu maaşı bütçenize gelir olarak ekleyin"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Maaş Yattı (Gelire Ekle)</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Primary Analytics Section: Spending Breakdown Pie Chart & Cash Flow */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* LEFT / HERO: Dedicated Recharts Pie Chart Spending Breakdown (7 cols) */}
+        {/* LEFT: Dedicated Recharts Pie Chart Spending Breakdown (7 cols) */}
         <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-xs">
           <div>
             {/* Header with quick insight badge */}
@@ -245,7 +403,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
             {/* Main Interactive Pie Visualization */}
             <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-              {/* Pie Chart Canvas (7 cols on desktop) */}
+              {/* Pie Chart Canvas */}
               <div className="md:col-span-7 h-60 w-full relative flex items-center justify-center">
                 {pieData.length === 0 ? (
                   <div className="text-center text-slate-500 text-xs py-8">
@@ -317,7 +475,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 )}
               </div>
 
-              {/* Top Ranked Spending Categories List (5 cols on desktop) */}
+              {/* Top Ranked Spending Categories List */}
               <div className="md:col-span-5 space-y-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
                   En Yüksek Giderler
@@ -438,102 +596,197 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Secondary Row: 50/30/20 Rule, Upcoming Payments & AI Tip Banner */}
+      {/* Secondary Row: 50/30/20 Rule & UPCOMING BILLS */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* 50 / 30 / 20 Smart Budget Health (6 cols) */}
-        <section className="lg:col-span-6 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-semibold text-white">50 / 30 / 20 Bütçe Dengesi Kuralı</h3>
-              <p className="text-xs text-slate-400 mt-0.5">Finansal istikrar ve disiplin göstergeleri</p>
-            </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              Sağlıklı
-            </span>
-          </div>
-
-          <div className="space-y-4">
-            {/* Needs */}
-            <div>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-slate-300 font-medium">Zorunlu İhtiyaçlar (Kira, Fatura, Market)</span>
-                <span className="font-bold text-white">%{needsPct} / %50</span>
-              </div>
-              <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-                <div
-                  className="h-full bg-indigo-500 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, needsPct)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Wants */}
-            <div>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-slate-300 font-medium">Kişisel İstekler (Yeme-İçme, Alışveriş)</span>
-                <span className="font-bold text-white">%{wantsPct} / %30</span>
-              </div>
-              <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-                <div
-                  className="h-full bg-sky-500 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, wantsPct)}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Savings */}
-            <div>
-              <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-slate-300 font-medium">Tasarruf & Yatırım Fonu</span>
-                <span className="font-bold text-emerald-400">%{savingsPct} / %20</span>
-              </div>
-              <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
-                <div
-                  className="h-full bg-emerald-500 rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, savingsPct)}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Upcoming Payments (3 cols) */}
-        <section className="lg:col-span-3 bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between shadow-xs">
+        {/* 50 / 30 / 20 Smart Budget Health (5 cols) */}
+        <section className="lg:col-span-5 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-white">Yaklaşan Ödemeler</h3>
-              {upcomingBills.length > 0 && (
-                <span className="text-[10px] bg-rose-500/20 text-rose-400 px-2 py-0.5 rounded border border-rose-500/30 font-semibold">
-                  {upcomingBills.length} Kritik
+              <div>
+                <h3 className="font-semibold text-white">50 / 30 / 20 Bütçe Kuralı</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Finansal disiplin ve denge göstergeleri</p>
+              </div>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Sağlıklı
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              {/* Needs */}
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-slate-300 font-medium">Zorunlu İhtiyaçlar (%50)</span>
+                  <span className="font-bold text-white">%{needsPct}</span>
+                </div>
+                <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, needsPct)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Wants */}
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-slate-300 font-medium">Kişisel İstekler (%30)</span>
+                  <span className="font-bold text-white">%{wantsPct}</span>
+                </div>
+                <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    className="h-full bg-sky-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, wantsPct)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Savings */}
+              <div>
+                <div className="flex justify-between text-xs mb-1.5">
+                  <span className="text-slate-300 font-medium">Tasarruf & Yatırım (%20)</span>
+                  <span className="font-bold text-emerald-400">%{savingsPct}</span>
+                </div>
+                <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+                  <div
+                    className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, savingsPct)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <p className="text-[11px] text-slate-500 mt-4 pt-3 border-t border-slate-800">
+            Gelirinizin en az %20'sini birikime ayırarak finansal özgürlüğünüzü güvenceye alın.
+          </p>
+        </section>
+
+        {/* UPCOMING BILLS WITH URGENCY BADGES & QUICK 'ŞİMDİ ÖDE' BUTTON (7 cols) */}
+        <section className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 flex flex-col justify-between shadow-xs">
+          <div>
+            {/* Header with Urgency Counter */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-rose-500/20 text-rose-400 flex items-center justify-center border border-rose-500/30">
+                  <Clock className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-white flex items-center gap-2">
+                    <span>Vadesi Yaklaşan Faturalar & Ödemeler</span>
+                  </h3>
+                  <p className="text-xs text-slate-400">Son ödeme tarihi yaklaşan kritik borç ve faturalar</p>
+                </div>
+              </div>
+
+              {urgentBillsCount > 0 ? (
+                <span className="inline-flex items-center gap-1 text-xs bg-rose-500/20 text-rose-300 px-3 py-1 rounded-full border border-rose-500/40 font-bold animate-pulse">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                  <span>{urgentBillsCount} Acil Ödeme</span>
+                </span>
+              ) : (
+                <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full border border-emerald-500/20 font-medium">
+                  Geciken Yok
                 </span>
               )}
             </div>
 
+            {/* List of Bills with Visual Urgency Badges & Quick Pay Button */}
             <div className="space-y-2.5">
               {upcomingBills.length === 0 ? (
-                <p className="text-xs text-slate-500 text-center py-4">Bekleyen ödeme bulunmuyor.</p>
+                <div className="p-6 text-center text-slate-500 text-xs bg-slate-950/60 rounded-xl border border-slate-800">
+                  Bekleyen kritik ödeme bulunmuyor. Tüm faturalarınız ödendi! 🎉
+                </div>
               ) : (
                 upcomingBills.map((bill) => {
                   const remaining = getDaysRemaining(bill.dueDate);
+
+                  // Determine urgency styling & countdown badge
+                  let countdownBadge = null;
+                  let cardBorderClass = 'border-slate-800 hover:border-slate-700 bg-slate-950';
+
+                  if (remaining.isOverdue) {
+                    cardBorderClass = 'border-rose-500/50 bg-rose-950/20 hover:border-rose-500/70';
+                    countdownBadge = (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-rose-500/25 text-rose-300 border border-rose-500/40 animate-pulse">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                        <span>{Math.abs(remaining.days)} gün gecikti!</span>
+                      </span>
+                    );
+                  } else if (remaining.isDueToday) {
+                    cardBorderClass = 'border-amber-500/50 bg-amber-950/20 hover:border-amber-500/70';
+                    countdownBadge = (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-black bg-amber-500/25 text-amber-300 border border-amber-500/40 animate-pulse">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Bugün son gün! (0 gün kaldı)</span>
+                      </span>
+                    );
+                  } else if (remaining.days <= 3) {
+                    cardBorderClass = 'border-amber-500/40 bg-slate-950 hover:border-amber-500/60';
+                    countdownBadge = (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
+                        <Clock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>{remaining.days} gün kaldı</span>
+                      </span>
+                    );
+                  } else {
+                    countdownBadge = (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-900 text-indigo-300 border border-indigo-500/30">
+                        <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>{remaining.days} gün kaldı</span>
+                      </span>
+                    );
+                  }
+
                   return (
                     <div
                       key={bill.id}
-                      className="flex items-center justify-between p-2.5 bg-slate-950 rounded-xl border border-slate-800 hover:border-slate-700 transition"
+                      className={`p-3.5 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${cardBorderClass}`}
                     >
-                      <div className="min-w-0 pr-2">
-                        <p className="text-xs font-medium text-white truncate">{bill.title}</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{formatDate(bill.dueDate)} • {remaining.label}</p>
+                      {/* Left info */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <h4 className="text-xs sm:text-sm font-bold text-white truncate">
+                            {bill.title}
+                          </h4>
+                          {countdownBadge}
+                        </div>
+                        <div className="flex items-center gap-2.5 text-[11px] text-slate-400 flex-wrap">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3 h-3 text-slate-500" />
+                            Vade: <b className="text-slate-300">{formatDate(bill.dueDate)}</b>
+                          </span>
+                          <span>•</span>
+                          <span className="text-slate-400">{bill.category}</span>
+                          <span>•</span>
+                          <span className="font-semibold text-indigo-300 bg-indigo-950/70 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                            {remaining.isOverdue
+                              ? `${Math.abs(remaining.days)} gün gecikmede`
+                              : remaining.isDueToday
+                              ? 'Bugün ödenmeli'
+                              : `${remaining.days} gün kaldı`}
+                          </span>
+                        </div>
                       </div>
-                      <div className="text-right shrink-0 flex items-center gap-1.5">
-                        <p className="text-xs font-bold text-rose-400">
-                          {formatCurrency(bill.amount, currency)}
-                        </p>
+
+                      {/* Right: Amount and 'Şimdi Öde' Quick Pay button */}
+                      <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-800/60">
+                        <div className="text-left sm:text-right">
+                          <p className="text-sm sm:text-base font-extrabold text-rose-400 tracking-tight">
+                            {formatCurrency(bill.amount, currency)}
+                          </p>
+                          <span className="text-[10px] text-slate-500 block">
+                            {bill.autoLogExpense ? 'Gidere Otomatik İşlenir' : 'Tek Seferlik'}
+                          </span>
+                        </div>
+
+                        {/* 'ŞİMDİ ÖDE' ACTION BUTTON */}
                         <button
                           onClick={() => onMarkBillPaid(bill.id)}
-                          className="p-1 text-emerald-400 hover:bg-emerald-950/40 rounded-lg transition cursor-pointer"
-                          title="Ödendi İşaretle"
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 transition cursor-pointer"
+                          title="Faturayı ödendi olarak işaretle ve gidere ekle"
                         >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <CreditCard className="w-3.5 h-3.5" />
+                          <span>Şimdi Öde</span>
                         </button>
                       </div>
                     </div>
@@ -543,52 +796,19 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={() => onNavigateTab('bills')}
-            className="w-full mt-3 py-2 text-xs font-semibold text-slate-400 border border-slate-800 rounded-xl hover:bg-slate-800 hover:text-white transition-colors cursor-pointer"
-          >
-            Tüm Faturalar
-          </button>
-        </section>
-
-        {/* Günün Tasarruf Önerisi (3 cols) */}
-        <section className="lg:col-span-3 bg-indigo-950/70 border border-indigo-500/30 rounded-2xl p-5 relative overflow-hidden flex flex-col justify-between shadow-xs">
-          <div className="relative z-10">
-            <div className="flex items-center gap-1.5 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-2">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-              <span>Tasarruf Tavsiyesi</span>
-            </div>
-            <p className="text-xs text-indigo-200/90 leading-relaxed mb-3">
-              Evde kahve demleyerek bu ay <span className="text-white font-bold italic">₺640</span> tasarruf ettiniz!
-            </p>
-
-            <div className="h-2 w-full bg-indigo-900/60 rounded-full overflow-hidden border border-indigo-800">
-              <div className="h-full bg-indigo-400 w-3/4 rounded-full" />
-            </div>
-
-            <div className="flex justify-between mt-2 text-[10px]">
-              <span className="text-indigo-300 font-medium">Hedef: ₺1.500</span>
-              <span className="text-indigo-100 font-bold">₺1.120</span>
-            </div>
-          </div>
-
-          <div className="mt-3 pt-3 border-t border-indigo-800/40 flex items-center justify-between relative z-10">
+          {/* Footer View All Bills Link */}
+          <div className="mt-4 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
+            <span className="text-slate-400">
+              Toplam {bills.filter((b) => !b.isPaid).length} bekleyen ödemeniz var.
+            </span>
             <button
-              onClick={() => onNavigateTab('aicoach')}
-              className="text-xs text-indigo-300 hover:text-white font-semibold flex items-center gap-1 cursor-pointer"
+              onClick={() => onNavigateTab('bills')}
+              className="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition cursor-pointer"
             >
-              <span>AI Analizi</span>
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={onOpenAddModal}
-              className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold rounded-lg shadow-sm transition cursor-pointer"
-            >
-              + Ekle
+              <span>Tüm Faturaları Yönet</span>
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
-
-          <div className="absolute -bottom-6 -right-6 w-28 h-28 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
         </section>
       </div>
     </div>
